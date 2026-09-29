@@ -1,0 +1,9 @@
+{
+  "name": "deadline-server",
+  "version": "1.0.0",
+  "description": "Multiplayer relay server for DEADLINE",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "ws": "^8.17.0" },
+  "engines": { "node": ">=18" }
+}
