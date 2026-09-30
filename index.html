@@ -83,7 +83,7 @@ const BP_vineyard=[[280,300,'h'],[420,300,'h'],[300,150,'r'],[500,420,'f'],[150,
 const FURN_HP={t:60,s:120,k:150,b:80,y:70,c:140,p:90,r:50};
 const MAPS={
 compound:{name:'COMPOUND',desc:'Urban strike compound - breach, clear, defuse.',timer:180,rain:false,R0:R.map(r=>r.slice()),D0:D0,F0:F0,BP:BP,bombs:[{x:1400,y:190,label:'MAIN HALL'}],swatSpawn:{x:350,y:505},paths:[]},
-vineyard:{name:'VINEYARD',desc:'A sprawling rain-soaked vineyard estate. Big, open, and slow to cross - two possible bomb sites, longer fuse.',timer:240,rain:true,R0:R_vineyard,D0:D0_vineyard,F0:F0_vineyard,BP:BP_vineyard,bombs:[{x:300,y:250,label:'COURTYARD'},{x:1440,y:790,label:'GREENHOUSE'}],swatSpawn:{x:150,y:500},paths:[[150,470,300,60],[450,470,300,20],[750,470,350,20],[1080,700,120,40]]}
+vineyard:{name:'VINEYARD',desc:'A sprawling rain-soaked vineyard estate. Big, open, and slow to cross - two live bomb sites, SWAT must defuse both to win, longer fuse.',timer:240,rain:true,R0:R_vineyard,D0:D0_vineyard,F0:F0_vineyard,BP:BP_vineyard,bombs:[{x:300,y:250,label:'COURTYARD'},{x:1440,y:790,label:'GREENHOUSE'}],swatSpawn:{x:150,y:500},paths:[[150,470,300,60],[450,470,300,20],[750,470,350,20],[1080,700,120,40]]}
 };
 let curMap='compound';
 let F=[],D=[],cam={x:0,y:0};const chg=[];
@@ -102,14 +102,18 @@ LMG:{n:'LMG',m:75,d:22,r:.17,s:.075,p:1,rec:.03,heavy:1},
 let myTeam='swat',loadout={pri:'RIFLE',sec:'PISTOL',f:2,s:2,g:2};
 const WP=[WEAPON_DB.PISTOL,WEAPON_DB.SMG,WEAPON_DB.RIFLE,WEAPON_DB.BREACHER];
 function buildWP(){WP[0]=WEAPON_DB[loadout.sec];WP[1]=WEAPON_DB.SMG;WP[2]=WEAPON_DB[loadout.pri];WP[3]=WEAPON_DB[myTeam=='swat'?'BREACHER':'SHOTGUN']}
-let P,B,bots,civs=[],dz=[],agnes=[],drops=[],sm,gr,tr,keys={},mx=0,my=0,down=false,run=false,t0,bomb={x:1400,y:190},defuse=0,timer,flash=0,over=false;
-let nzT=0,t2=0,zm=1,hurt=0,sb=false,el=0;
+let P,B,bots,civs=[],dz=[],agnes=[],drops=[],sm,gr,tr,keys={},mx=0,my=0,down=false,run=false,t0,bomb={x:1400,y:190},bombs=[bomb],defuse=0,timer,flash=0,over=false;
+function nearestBomb(px,py){let best=null,bd=1e9;for(const b of bombs){if(b.defused)continue;const d=Math.hypot(px-b.x,py-b.y);if(d<bd){bd=d;best=b}}return best}
+let nzT=0,t2=0,zm=1,hurt=0,sb=false,el=0,siteMsgT=0,siteMsgText='';
 function jitterSpawn(x,y,rad){const S0=solids();const free=(nx,ny)=>!S0.some(([wa,wb,ww,wh])=>nx>wa-10&&nx<wa+ww+10&&ny>wb-10&&ny<wb+wh+10);if(free(x,y)&&Math.random()<.15)return[x,y];for(let t=0;t<24;t++){const a=Math.random()*6.28,d=8+Math.random()*rad;const nx=x+Math.cos(a)*d,ny=y+Math.sin(a)*d;if(free(nx,ny))return[nx,ny]}return[x,y]}
 function randFreePos(){const S0=solids();for(let t=0;t<50;t++){const x0=80+Math.random()*(WW-160),y0=80+Math.random()*(WH-160);if(!S0.some(([wa,wb,ww,wh])=>x0>wa-14&&x0<wa+ww+14&&y0>wb-14&&y0<wb+wh+14))return[x0,y0]}return[WW/2,WH/2]}
 function runMatch(){ensureAC();buildWP();if(mpMode)M.style.display='none';
 const MD=MAPS[curMap]||MAPS.compound;
 F=MD.F0.map(f=>({...f,hp:FURN_HP[f.k]||120,flip:0}));D=MD.D0.map(d=>({...d,open:0,hp:d.t=='h'?16:1,animT:0,blow:false}));chg.length=0;R.length=0;MD.R0.forEach(r=>R.push(r.slice()));rebuild();
-const site=MD.bombs[Math.floor(Math.random()*MD.bombs.length)];bomb.x=site.x;bomb.y=site.y;bomb.label=site.label||'';
+const allSites=MD.bombs.length>1;
+if(allSites)bombs=MD.bombs.map(s=>({x:s.x,y:s.y,label:s.label||'',defused:false}));
+else{const site=MD.bombs[Math.floor(Math.random()*MD.bombs.length)];bombs=[{x:site.x,y:site.y,label:site.label||'',defused:false}]}
+bomb=bombs[0];
 const spawn=myTeam=='swat'?{x:MD.swatSpawn.x,y:MD.swatSpawn.y}:{x:bomb.x-40,y:bomb.y};
 P={n:cur||'YOU',ar:0,tr:0,staff:isStaff(),mag:WP.map(w=>w.m),res:WP.map(w=>w.m*3),rl:0,recoil:0,k:0,as:0,dm:{},x:spawn.x,y:spawn.y,a:0,hp:100,w:2,cd:0,
 g:myTeam=='swat'?loadout.g:loadout.g,c:myTeam=='swat'?2:0,f:loadout.f+(rank()>=2?1:0),s:loadout.s+(rank()>=4?1:0),
@@ -118,7 +122,7 @@ dz=[];agnes=[];drops=[];
 const BPs=MD.BP.slice();for(let i=BPs.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[BPs[i],BPs[j]]=[BPs[j],BPs[i]]}
 bots=BPs.map(([a,b,r],i)=>{const[bx0,by0]=myTeam=='swat'?jitterSpawn(a,b,38):jitterSpawn(MD.swatSpawn.x+(i%4-1.5)*40,MD.swatSpawn.y+(Math.floor(i/4)-1)*40,32);return{n:NM[i],k:0,as:0,dm:{},rep:0,x:bx0,y:by0,a:Math.PI,hp:60,cd:1,bl:0,ax:bx0,ay:by0,px:bx0,py:by0,sx:bx0,sy:by0,r,al:0,gc:4+Math.random()*4,hide:0,sq:i%3}});
 civs=Array.from({length:6+Math.floor(Math.random()*3)},(_,i)=>{const[cx,cy]=randFreePos();return{x:cx,y:cy,sx:cx,sy:cy,a:Math.random()*6.28,alive:1,mood:'idle',t:Math.random()*3,wtx:null,wty:null,grp:i%3}});
-nzT=0;cs.length=0;pings.length=0;sm=[];gr=[];tr=[];timer=MD.timer||180;el=0;sb=false;G.cheat=0;defuse=0;defuserId=null;netDefusers={};flash=0;over=false;run=true;t0=performance.now();fxs.length=0;objT=5;over=true;M.style.display='none';bl.clearRect(0,0,WW,WH);hurt=0;menuMusic(false);intro(()=>{over=false;loop()});requestAnimationFrame(function pk(){if(over)draw();if(!run)return;requestAnimationFrame(pk)})}
+nzT=0;cs.length=0;pings.length=0;sm=[];gr=[];tr=[];timer=MD.timer||180;el=0;sb=false;G.cheat=0;defuse=0;siteMsgT=0;defuserId=null;netDefusers={};flash=0;over=false;run=true;t0=performance.now();fxs.length=0;objT=5;over=true;M.style.display='none';bl.clearRect(0,0,WW,WH);hurt=0;menuMusic(false);intro(()=>{over=false;loop()});requestAnimationFrame(function pk(){if(over)draw();if(!run)return;requestAnimationFrame(pk)})}
 let objT=0;
 
 onkeydown=e=>{if(e.target&&e.target.tagName=='INPUT')return;keys[e.key.toLowerCase()]=1;if(!run)return;const k=e.key;if(k>='1'&&k<='4'){P.w=k-1;P.rl=0}const l=e.key.toLowerCase();if(l=='f'&&P.f>0){P.f--;gr.push({x:P.x,y:P.y,a:P.a,t:1,k:'f',v:380})}if(l=='c'&&P.s>0){P.s--;gr.push({x:P.x,y:P.y,a:P.a,t:.8,k:'s',v:320})}if(l=='g'&&P.g>0){P.g--;gr.push({x:P.x,y:P.y,a:P.a,t:1.3,k:'g',v:340})}if(l=='m'&&myTeam=='terrorist'&&P.mo>0){P.mo--;gr.push({x:P.x,y:P.y,a:P.a,t:1,k:'m',v:300})}if(l=='j')agnesAction();if(l=='l')barricade();if(l=='v')flip();if(l=='k')kick();if(l=='b'){if(myTeam=='terrorist'){const ag2=agnes.find(a=>a.armed&&!a.triggered&&a.mode=='blue');if(ag2)triggerAgnes(ag2)}else charge()}if(l=='u')sb=!sb;if(l=='r'){if(P.jammed&&P.jammed[fireW()])tryUnjam();else reload()}if(l=='n')devTog();if(l=='x')escort();if(l=='escape')leaveMatch();if(l=='t'&&!e.repeat){if(t2&&performance.now()-t2<700){t2=0;shout()}else t2=performance.now()}};
@@ -136,6 +140,7 @@ if(o===P)for(const c of civs){if(!c.alive)continue;const px=c.x-o.x,py=c.y-o.y,t
 if(end>=wd-.5&&wd<700){const ex=o.x+Math.cos(a)*end,ey=o.y+Math.sin(a)*end;hole(ex,ey);hitStuff(o,ex,ey,w)}tr.push({x1:o.x,y1:o.y,x2:o.x+Math.cos(a)*end,y2:o.y+Math.sin(a)*end,t:.06})}}
 let last=0;function loop(ts){if(!run)return;requestAnimationFrame(loop);ts=ts||performance.now();const dt=Math.min(.05,(ts-last)/1000||.016);last=ts;if(!over)update(dt);draw();}
 let netT=0,netDefusers={},lastDefSent=null,defuserId=null;function update(dt){if(objT>0)objT-=dt;if(!mpMode||isHost)timer-=dt;el+=dt;if(mpMode){netT-=dt;if(netT<=0){netT=.1;netSend({t:'state',data:{x:P.x,y:P.y,a:P.a,hp:P.hp,w:P.w}})}}P.a=Math.atan2(my/zm+cam.y-P.y,mx/zm+cam.x-P.x);
+if(bombs.length>1){const nb=nearestBomb(P.x,P.y);if(nb)bomb=nb}
 if(P.shieldStun>0)P.shieldStun=Math.max(0,P.shieldStun-dt);
 const hasShield=myTeam=='swat'&&WP[2]&&WP[2].shield;const onShield=hasShield&&P.w===2;const shieldUp=onShield&&!(P.shieldStun>0);
 const fireIdx=onShield?0:P.w;
@@ -152,7 +157,7 @@ const defusingNow=attemptingDefuse&&!!P.hackDone;
 const peekIn=shieldUp?0:(keys.e?1:0)-(keys.q?1:0);P.peek=(P.peek||0)+(peekIn-(P.peek||0))*Math.min(1,dt*9);
 P.lox=P.x+Math.cos(P.a+Math.PI/2)*P.peek*24;P.loy=P.y+Math.sin(P.a+Math.PI/2)*P.peek*24;
 const heavyGun=WP[P.w]&&WP[P.w].heavy;const sp=(keys.shift?90:135)*dt*(G.fast?2.2:1)*(shieldUp?.45:1)*(heavyGun?.72:1);let dx=(keys.d?1:0)-(keys.a?1:0),dy=(keys.s?1:0)-(keys.w?1:0);if(!peekIn&&(dx||dy)){const l=Math.hypot(dx,dy);P.stepD=(P.stepD||0)+sp;if(!keys.shift&&P.stepD>26){P.stepD=0;sfx.step(false)}if(G.nc){P.x=Math.max(10,Math.min(WW-10,P.x+dx/l*sp));P.y=Math.max(10,Math.min(WH-10,P.y+dy/l*sp))}else move(P,dx/l*sp,dy/l*sp,10)}
-P.cd-=dt;P.recoil=Math.max(0,(P.recoil||0)-dt*.22);if(P.rl>0){P.rl-=dt;if(P.rl<=0){P.rl=0;const n=Math.min(WP[fireIdx].m-P.mag[fireIdx],P.res[fireIdx]);P.mag[fireIdx]+=n;P.res[fireIdx]-=n;sfx.reloadIn()}}flash=Math.max(0,flash-dt);hurt=Math.max(0,hurt-dt);
+P.cd-=dt;P.recoil=Math.max(0,(P.recoil||0)-dt*.22);if(P.rl>0){P.rl-=dt;if(P.rl<=0){P.rl=0;const n=Math.min(WP[fireIdx].m-P.mag[fireIdx],P.res[fireIdx]);P.mag[fireIdx]+=n;P.res[fireIdx]-=n;sfx.reloadIn()}}flash=Math.max(0,flash-dt);hurt=Math.max(0,hurt-dt);if(siteMsgT>0)siteMsgT-=dt;
 if(P.jam){const j=P.jam;j.pos+=j.dir*dt*1.15;if(j.pos>1){j.pos=1;j.dir=-1}else if(j.pos<0){j.pos=0;j.dir=1}if(j.flash>0)j.flash-=dt;if(j.miss>0)j.miss-=dt}
 if(down&&P.cd<=0&&flash<1.5&&!P.rl&&!P.jammed[fireIdx]&&!attemptingDefuse&&P.mag[fireIdx]>0){const w=WP[fireIdx];
 if(P.reloadStreak[fireIdx]>=3&&Math.random()<1/3){P.jammed[fireIdx]=true;P.jam={w:fireIdx,prog:0,need:3,pos:0,dir:1,zoneA:.35,zoneW:.24,flash:0,miss:0};P.cd=.35;P.reloadStreak[fireIdx]=0;sfx.jam()}
@@ -202,10 +207,12 @@ if(defusingNow){P.hbT=(P.hbT||0)-dt;if(P.hbT<=0){P.hbT=Math.max(.22,Math.min(1.0
 if(G.god)P.hp=100;
 if(myTeam=='terrorist'&&(!mpMode||isHost)){const near2=bots.filter(b=>b.hp>0&&Math.hypot(b.x-bomb.x,b.y-bomb.y)<45&&los(b,bomb,false)).length;if(near2)defuse+=dt*Math.min(2,near2)*.5;else defuse=Math.max(0,defuse-dt)}
 if(!mpMode||isHost){
-if(myTeam=='swat'){if(defuse>=5)end(true,'BOMB DEFUSED');else if(timer<=0)end(false,'3:00 TIME LIMIT - BOMB EXPLODED');else if(bots.every(b=>b.hp<=0||b.tied)&&(!bots.some(b=>b.hp>0&&b.tied)||(nzT+=dt)>8))end(true,'ALL TERRORISTS NEUTRALIZED')}
-else{if(defuse>=5)end(false,'BOMB DEFUSED - YOU LOST');else if(timer<=0)end(true,'TIME EXPIRED - THE BOMB SURVIVES');else if(bots.every(b=>b.hp<=0))end(true,'ALL SWAT ELIMINATED')}}
+let justDefused=false,allDone=false;
+if(defuse>=5&&!bomb.defused){bomb.defused=true;defuse=0;justDefused=true;allDone=bombs.every(b=>b.defused);if(!allDone){siteMsgT=3;siteMsgText=(bomb.label?bomb.label+' ':'BOMB ')+'DEFUSED — '+bombs.filter(b=>!b.defused).length+' SITE'+(bombs.filter(b=>!b.defused).length>1?'S':'')+' LEFT';sfx.hackWin();P.hackDone=false;P.hack=null}}
+if(myTeam=='swat'){if(justDefused&&allDone)end(true,bombs.length>1?'ALL BOMBS DEFUSED':'BOMB DEFUSED');else if(timer<=0)end(false,'3:00 TIME LIMIT - BOMB EXPLODED');else if(bots.every(b=>b.hp<=0||b.tied)&&(!bots.some(b=>b.hp>0&&b.tied)||(nzT+=dt)>8))end(true,'ALL TERRORISTS NEUTRALIZED')}
+else{if(justDefused&&allDone)end(false,bombs.length>1?'ALL BOMBS DEFUSED - YOU LOST':'BOMB DEFUSED - YOU LOST');else if(timer<=0)end(true,'TIME EXPIRED - THE BOMB SURVIVES');else if(bots.every(b=>b.hp<=0))end(true,'ALL SWAT ELIMINATED')}}
 if(P.hp<=0)end(false,'YOU WERE ELIMINATED');
-if(mpMode&&isHost&&!over){netT-=dt;if(netT<=0){netT=.08;netSend({t:'event',data:{kind:'match_tick',timer,defuse,bots:bots.map(b=>({x:b.x,y:b.y,a:b.a,hp:b.hp,sur:!!b.sur,tied:!!b.tied,down:!!b.down,dead:!!b.dead,gib:!!b.gib}))}})}}}
+if(mpMode&&isHost&&!over){netT-=dt;if(netT<=0){netT=.08;netSend({t:'event',data:{kind:'match_tick',timer,defuse,bd:bombs.map(b=>!!b.defused),bots:bots.map(b=>({x:b.x,y:b.y,a:b.a,hp:b.hp,sur:!!b.sur,tied:!!b.tied,down:!!b.down,dead:!!b.dead,gib:!!b.gib}))}})}}}
 function end(w,m){if(over)return;over=true;if(w)sfx.win();else sfx.lose();if(!w&&P.hp<=0&&!P.d2){P.d2=1;Object.keys(P.dm).sort((u,v)=>P.dm[v]-P.dm[u]).forEach((n,i)=>{const e=bots.find(z=>z.n==n);if(e){if(i)e.as++;else e.k++}})}if(!w&&!P.gib)pool(P,P.a,1.4);setTimeout(()=>{run=false;if(w&&!G.cheat)addRP(1);showRecap(w,m)},w?300:1800)}
 function showRecap(w,m){
 const killer=(!w&&P.hp<=0)?Object.keys(P.dm).sort((u,v)=>P.dm[v]-P.dm[u])[0]:null;
@@ -244,7 +251,8 @@ function draw(){zm=G.attp?Math.min(W/WW,H/WH):1;{const vw=W/zm,vh=H/zm;cam.x=vw>
 if(MDd.rain){x.fillStyle='#2a3226';x.fillRect(0,0,WW,WH);x.fillStyle='#333d2c';for(let i=0;i<WW;i+=40)for(let j=0;j<WH;j+=40)if((i+j)/40%2)x.fillRect(i,j,40,40)}
 else{x.fillStyle='#3a382c';x.fillRect(0,0,WW,WH);x.fillStyle='#34322a';for(let i=0;i<WW;i+=40)for(let j=0;j<WH;j+=40)if((i+j)/40%2)x.fillRect(i,j,40,40);x.fillStyle='rgba(150,120,70,.16)';x.fillRect(420,60,1120,880)}
 x.fillStyle='rgba(180,170,150,.5)';for(const[px0,py0,pw,ph]of MDd.paths)x.fillRect(px0,py0,pw,ph);
-x.drawImage(blc,0,0);for(const c of cs){x.save();x.translate(c.x,c.y);x.rotate(c.a);x.fillStyle=c.col;x.fillRect(-3,-1.2,6,2.4);x.restore()}x.fillStyle='#b0402c';x.beginPath();x.arc(bomb.x,bomb.y,14,0,7);x.fill();x.fillStyle='#e8dcb0';x.font='bold 11px monospace';x.fillText('C4',bomb.x-8,bomb.y+4);if(bomb.label){x.fillStyle='#c8a04a';x.font='bold 10px monospace';x.fillText(bomb.label,bomb.x-x.measureText(bomb.label).width/2,bomb.y-20)}
+x.drawImage(blc,0,0);for(const c of cs){x.save();x.translate(c.x,c.y);x.rotate(c.a);x.fillStyle=c.col;x.fillRect(-3,-1.2,6,2.4);x.restore()}
+for(const bm of bombs){if(bm.defused)continue;x.fillStyle='#b0402c';x.beginPath();x.arc(bm.x,bm.y,14,0,7);x.fill();x.fillStyle='#e8dcb0';x.font='bold 11px monospace';x.fillText('C4',bm.x-8,bm.y+4);if(bm.label){x.fillStyle='#c8a04a';x.font='bold 10px monospace';x.fillText(bm.label,bm.x-x.measureText(bm.label).width/2,bm.y-20)}}
 x.lineWidth=2;for(const[a,b,w,h,m]of R){x.fillStyle=m=='w'?'#8a6a3a':m=='v'?'#2a3f6a':'#7d7a68';x.strokeStyle=m=='w'?'#4a3618':'#2a2a22';x.fillRect(a,b,w,h);x.strokeRect(a,b,w,h)}
 if(curMap=='compound'){x.fillStyle='#e8e8e8';x.font='bold 12px monospace';x.fillText('SWAT',256,450)}
 for(const d of D){if(d.open==2)continue;
@@ -380,6 +388,7 @@ if(t>4.5)fin()}
 frame()}
 function showSet(){shell(`<h2>SETTINGS</h2><label><input type="checkbox" ${G.gore?'checked':''} onchange="G.gore=this.checked"> Blood &amp; gore</label>${isStaff()?`<label><input type="checkbox" ${G.gs!==false?'checked':''} onchange="G.gs=this.checked"> Gold SWAT skin (staff)</label><label><input type="checkbox" ${G.gt!==false?'checked':''} onchange="G.gt=this.checked"> Gold terrorist skin (staff, for when you play terrorist)</label>`:''}${rank()>=5?`<label><input type="checkbox" ${G.sk?'checked':''} onchange="G.sk=this.checked"> Police Officer SWAT skin</label><label><input type="checkbox" ${G.tk?'checked':''} onchange="G.tk=this.checked"> Suit &amp; Vest terrorist skin (enemies)</label>`:'<small>Reach LIEUTENANT to unlock 2 new skins.</small>'}<h3 style="margin:6px 0 0">CONTROLS</h3><table><tr><td>W A S D</td><td>Move</td></tr><tr><td>SHIFT</td><td>Walk slowly</td></tr><tr><td>MOUSE</td><td>Aim</td></tr><tr><td>LEFT CLICK</td><td>Shoot</td></tr><tr><td>1 / 2 / 3 / 4</td><td>Pistol / SMG / Rifle / Breaching shotgun</td></tr><tr><td>Q / E (hold)</td><td>Peek left / peek right around cover</td></tr><tr><td>F</td><td>Throw flashbang</td></tr><tr><td>C</td><td>Throw smoke</td></tr><tr><td>G</td><td>Throw frag (destroys wooden walls, furniture, doors)</td></tr><tr><td>R</td><td>Reload (or clear a weapon jam)</td></tr>${isStaff()?'<tr><td>N</td><td>Dev menu (staff)</td></tr>':''}<tr><td>T (twice)</td><td>Shout: order enemies to drop their weapons</td></tr><tr><td>Z (hold)</td><td>Zip tie a surrendered enemy</td></tr><tr><td>X</td><td>Escort / release a restrained enemy (take them to the SWAT truck)</td></tr><tr><td>U</td><td>Scoreboard (kills, assists, report)</td></tr><tr><td>V</td><td>Flip a table into cover</td></tr><tr><td>K</td><td>Kick open a wooden door (or batter down a barricade)</td></tr><tr><td>B</td><td>SWAT: place breach charge on nearest door, press again to detonate. Terrorist: detonate your nearest armed blue-laser Agnes charge</td></tr><tr><td>H (hold)</td><td>Hack the detonator (drag your mouse to keep the slider inside the thick moving band), then keep holding to defuse (5 sec)</td></tr><tr><td>M</td><td>Terrorist: throw a molotov (7 sec burning zone, 3 dmg/sec)</td></tr><tr><td>J</td><td>Terrorist: plant an Agnes charge on a nearby door/wall, or toggle a nearby one's laser between red (auto-trip) and blue (manual, detonate with B)</td></tr><tr><td>L</td><td>Terrorist: barricade a nearby wooden door (9 kicks or 2 breach charges to break)</td></tr></table><small>SWAT can equip a BALLISTIC SHIELD instead of a primary in Prep Phase: heavily slows you and blocks peeking while raised, and blocks any bullet hitting you from the front (side/back shots still kill). It has a built-in pistol - just click to fire, no rifle or SMG while it's up (switching to [2] SMG or [4] breacher lowers it fully). Frags and breach charges ignore the shield entirely and knock it down (stunned a few seconds) if they catch you. Terrorists can equip an LMG instead: huge magazine and hits hard, but heavy and slows you down. Whenever SWAT starts defusing, every terrorist gets an instant sense of the bomb's location.</small>${back}`)}
 const ANNOUNCEMENTS=[
+{d:'2026-09-29',t:'Vineyard now needs both bombs defused',b:'Both the COURTYARD and GREENHOUSE sites are live every match on Vineyard now - SWAT has to breach and defuse both to win, not just whichever one spawned. Defusing one shows a banner and keeps the match going instead of ending it; terrorists still win if the timer runs out or every SWAT operator falls. Compound is unaffected - still one site, unchanged.'},
 {d:'2026-09-29',t:'Ballistic shield can fight back',b:'The ballistic shield now has a built-in pistol - just click to fire, no extra step needed. It stays raised and keeps blocking frontal shots the whole time you\'re firing it. Switching to the SMG or breacher still lowers it fully; there\'s no rifle option while shielded. New weakness: frags and breach charges ignore the shield completely, deal bonus damage, and knock it down for a few seconds if they catch you nearby.'},
 {d:'2026-09-29',t:'Real accounts, server-side',b:'Accounts now live on the DEADLINE server instead of only in your browser, so you can log in from any device. Password changes and a new self-service "REGENERATE ACCESS KEY" button on your account page now rotate your access key too, so a leaked key or old password stops working immediately. If your device has no connection, you can still create/use an offline account on that device only.'},
 {d:'2026-09-29',t:'Signal hack made easier',b:'Reworked the bomb-hack minigame: the target is now a thick, clearly-visible band with a slider-style handle instead of a thin instant tick, the signal moves slower, and a faint trail shows its shape coming so you can anticipate it. Mistakes drain your progress more slowly too.'},
@@ -511,7 +520,8 @@ x.fillStyle='#221f18';x.fillRect(bx0,by0,bw,18);x.fillStyle='rgba(200,160,74,.55
 x.fillStyle='#fff';x.fillRect(bx0+j.pos*bw-2,by0-4,4,26);
 for(let i=0;i<j.need;i++){x.fillStyle=i<j.prog?'#6b9a3a':'#3a382c';x.beginPath();x.arc(bx0+bw/2-24+i*24,by0+40,7,0,Math.PI*2);x.fill()}
 x.restore()}}
-if(objT>0){const al2=Math.min(1,objT);x.save();x.globalAlpha=al2;x.fillStyle='rgba(10,10,8,.7)';const msg=myTeam=='swat'?'BREACH AND DEFUSE THE BOMB':'PROTECT THE BOMB. DENY ENTRY.';x.font='bold 20px monospace';const tw=x.measureText(msg).width;x.fillRect(W/2-tw/2-20,70,tw+40,34);x.fillStyle=myTeam=='swat'?'#5ab0ff':'#e8a050';x.fillText(msg,W/2-tw/2,94);x.restore()}
+if(objT>0){const al2=Math.min(1,objT);x.save();x.globalAlpha=al2;x.fillStyle='rgba(10,10,8,.7)';const multi=bombs.length>1,msg=myTeam=='swat'?(multi?'BREACH AND DEFUSE BOTH BOMBS':'BREACH AND DEFUSE THE BOMB'):(multi?'PROTECT BOTH BOMBS. DENY ENTRY.':'PROTECT THE BOMB. DENY ENTRY.');x.font='bold 20px monospace';const tw=x.measureText(msg).width;x.fillRect(W/2-tw/2-20,70,tw+40,34);x.fillStyle=myTeam=='swat'?'#5ab0ff':'#e8a050';x.fillText(msg,W/2-tw/2,94);x.restore()}
+if(siteMsgT>0){x.save();x.globalAlpha=Math.min(1,siteMsgT);x.fillStyle='rgba(10,10,8,.75)';x.font='bold 18px monospace';const tw3=x.measureText(siteMsgText).width;x.fillRect(W/2-tw3/2-20,110,tw3+40,32);x.fillStyle='#6b9a3a';x.fillText(siteMsgText,W/2-tw3/2,132);x.restore()}
 if(myTeam=='swat'&&P.hack&&Math.hypot(P.x-bomb.x,P.y-bomb.y)<45&&keys.h){const h=P.hack,bx0=W/2-150,by0=H-150,bw=300,now=performance.now()/1000,wave=.5+.4*Math.sin(now*h.spd*6.28+h.phase),dial=Math.max(0,Math.min(1,mx/W));
 x.save();x.fillStyle='rgba(10,10,8,.88)';x.fillRect(bx0-14,by0-34,bw+28,90);x.strokeStyle='#5ab0ff';x.lineWidth=2;x.strokeRect(bx0-14,by0-34,bw+28,90);
 x.fillStyle='#5ab0ff';x.font='bold 13px monospace';x.fillText('SIGNAL LOCK — DRAG THE SLIDER TO MATCH THE BAND',bx0-6,by0-16);
@@ -567,12 +577,12 @@ const notes=[220,220,246.9,196,220,196,174.6,196];let i=0;mSeq=setInterval(()=>{
 function bootTheme(){ensureAC();if(!AC||mBoot)return;mBoot=true;
 tn(110,1.6,.35,'sawtooth',55);nz(1.4,300,'lowpass',.5,.9);
 setTimeout(()=>tn(220,.5,.22,'square'),650);setTimeout(()=>tn(330,.7,.2,'square'),950);setTimeout(()=>{tn(440,1,.22,'sine');tn(660,1,.16,'sine')},1300)}
-function applyMatchTick(m){timer=m.timer;defuse=m.defuse;if(Array.isArray(m.bots))m.bots.forEach((nb,i)=>{const b=bots[i];if(!b)return;b.x=nb.x;b.y=nb.y;b.a=nb.a;b.hp=nb.hp;b.sur=nb.sur;b.tied=nb.tied;b.down=nb.down;if(nb.dead&&!b.dead){b.dead=1;b.gib=nb.gib}})}
+function applyMatchTick(m){timer=m.timer;defuse=m.defuse;if(Array.isArray(m.bd))m.bd.forEach((d,i)=>{if(bombs[i])bombs[i].defused=d});if(bombs.length>1){const nb=nearestBomb(P.x,P.y);if(nb)bomb=nb}if(Array.isArray(m.bots))m.bots.forEach((nb,i)=>{const b=bots[i];if(!b)return;b.x=nb.x;b.y=nb.y;b.a=nb.a;b.hp=nb.hp;b.sur=nb.sur;b.tied=nb.tied;b.down=nb.down;if(nb.dead&&!b.dead){b.dead=1;b.gib=nb.gib}})}
 function applyNetworkHit(m){const b=bots[m.id];if(!b||b.hp<=0)return;b.hp-=m.dmg;b.hl=null;splat(b.x,b.y,m.a||0,m.dmg>20?9:5);if(b.hp<=0&&!b.cr&&Math.random()<.4){b.hp=10;b.down=1;b.cr=1;b.lx=b.x;b.ly=b.y;pool(b,0,.8);b.helper=pickHelper(b)}if(b.hp<=0&&!b.dead){b.dead=1;const k=[P,...bots].find(z=>z.n==m.name)||{k:0,as:0,dm:{},n:m.name};credit(b,k);pool(b,0,1)}}
-function showTeamSelect(){shell(`<h2>CHOOSE YOUR SIDE</h2><p class="sub">Pick who you play as this match</p>
+function showTeamSelect(){const multi=(MAPS[curMap]||MAPS.compound).bombs.length>1;shell(`<h2>CHOOSE YOUR SIDE</h2><p class="sub">Pick who you play as this match</p>
 <div class="teamwrap">
-<div class="teamcard swat" onclick="pickTeam('swat')"><div class="fig"><div class="head"></div><div class="body"></div><div class="legs"></div></div><h3>SWAT</h3><small>Breach the building.<br>Defuse the bomb.</small></div>
-<div class="teamcard terr" onclick="pickTeam('terrorist')"><div class="fig"><div class="head"></div><div class="body"></div><div class="legs"></div></div><h3>TERRORIST</h3><small>Hold the building.<br>Protect the bomb.</small></div>
+<div class="teamcard swat" onclick="pickTeam('swat')"><div class="fig"><div class="head"></div><div class="body"></div><div class="legs"></div></div><h3>SWAT</h3><small>Breach the building.<br>Defuse ${multi?'both bombs':'the bomb'}.</small></div>
+<div class="teamcard terr" onclick="pickTeam('terrorist')"><div class="fig"><div class="head"></div><div class="body"></div><div class="legs"></div></div><h3>TERRORIST</h3><small>Hold the building.<br>Protect ${multi?'both bombs':'the bomb'}.</small></div>
 </div>${back}`)}
 function pickTeam(t){myTeam=t;if(myTeam=='swat'){loadout.pri=loadout.pri||'RIFLE';if(loadout.pri=='LMG')loadout.pri='RIFLE'}else if(loadout.pri=='SHIELD'){loadout.pri='RIFLE'}showPrep()}
 let readySet=new Set(),readyCountdown=60,readyTimer=null,myReady=false;
